@@ -1,0 +1,116 @@
+- hosts: app
+  become: true
+  gather_facts: yes
+  tasks:
+
+  - name: Install required software for Ubuntu
+    apt:
+      name: "{{ software }}"
+    vars:
+      software:
+        - curl
+        - software-properties-common
+        - ca-certificates
+        - apt-transport-https
+    when: 
+      ansible_distribution == "Ubuntu"
+
+  - name: Add Docker GPG apt Key Ubuntu
+    apt_key:
+      url: https://download.docker.com/linux/ubuntu/gpg
+      state: present
+    when:
+      ansible_distribution == "Ubuntu"
+
+  - name: Add Docker Repository Ubuntu
+    apt_repository:
+      repo: deb https://download.docker.com/linux/ubuntu focal stable
+      state: present
+    when:
+      ansible_distribution == "Ubuntu"
+
+  - name: Install docker Ubuntu
+    apt:
+      name: docker-ce
+      state: latest
+      update_cache: yes
+    when:
+      ansible_distribution == "Ubuntu"
+
+  - name: Add repo Centos
+    command: dnf config-manager --add-repo=https://download.docker.com/linux/centos/docker-ce.repo
+    when:
+      ansible_distribution == "CentOS"
+
+  - name: Install docker CentOS
+    dnf:
+      name: docker-ce
+      state: latest
+      update_cache: yes
+    when:
+      ansible_distribution == "CentOS"
+
+  - name: Enable service
+    service:
+      name: docker
+      enabled: yes
+      state: started
+
+- hosts: database
+  gather_facts: yes
+  become: yes
+  tasks:
+
+  - name: Install PostgreSQL
+    apt:
+      name: postgresql-{{ vers }}
+      update_cache: yes
+      
+  - name: Start and enable service
+    service:
+      name: postgresql
+      state: started
+      enabled: yes
+      
+  - name: Change user postgres auth peer -> trust
+    postgresql_pg_hba:
+      dest: /etc/postgresql/{{ vers }}/main/pg_hba.conf
+      contype: local
+      users: postgres
+      databases: all
+      method: trust
+
+  - name: Retart service
+    service:
+      name: postgresql
+      state: restarted
+
+  - name: Install pip3
+    apt:
+      name: python3-pip
+      update_cache: yes
+
+  - name: Install Python packages
+    pip: 
+      name: psycopg2-binary
+      state: present
+
+  - name: Create database
+    postgresql_db:
+      state: present
+      name: ppsql
+
+  - name: Create db user
+    postgresql_user:
+      state: present
+      name: "{{ db_user }}"
+      password: "{{ db_password }}"
+
+  - name: Grant db user access to app db
+    postgresql_privs:
+      type: database
+      database: psql
+      roles: "{{ db_user }}"
+      grant_option: no
+      privs: all
+
